@@ -85,10 +85,14 @@ Verify:
 curl http://localhost:8080/api/healthz
 # {"status":"ok"}
 
-curl -X POST http://localhost:8080/api/agent/run-once \
+curl -X POST http://localhost:8080/api/agents/run-once \
   -H 'content-type: application/json' \
   -d '{"prompt":"What is 7 * 6?","model":"gemini-2.5-flash","maxSteps":4}'
 ```
+
+> `src/index.ts` requires `PORT` to be set at boot. `npm run dev` and Docker
+> set it for you; if you run `node dist/index.mjs` directly, export `PORT=8080`
+> first.
 
 ### Build & run production bundle locally
 
@@ -108,7 +112,15 @@ npm start               # node dist/index.mjs
 | `PORT`           |          | `8080`       | Cloud Run injects this — do not hardcode       |
 | `NODE_ENV`       |          | `production` | Pino switches to JSON output when `production` |
 | `LOG_LEVEL`      |          | `info`       | `debug` / `info` / `warn` / `error`            |
-| `CORS_ORIGIN`    |          | `*`          | Comma-separated origins, or `*` for any        |
+
+> **Note on CORS.** `src/app.ts` currently mounts permissive `cors()` (any
+> origin). For production, prefer one of:
+>
+> - Front both services with the **same origin** (Google HTTPS Load Balancer
+>   routing `/api/*` here and `/*` to the frontend) — eliminates CORS entirely.
+> - Put the API behind **Cloud IAP** or a load balancer ACL.
+> - Add a 3-line patch to `src/app.ts` reading `process.env.CORS_ORIGIN` and
+>   passing `{ origin }` to the `cors()` middleware.
 
 ---
 
@@ -181,7 +193,7 @@ Everything lives under `/api`. Key endpoints:
 | ------ | ----------------------------- | -------------------------------------------- |
 | GET    | `/api/healthz`                | Liveness                                     |
 | GET    | `/api/agents`                 | List agent sessions                          |
-| POST   | `/api/agent/run-once`         | Run Gemini one-shot, return final + steps    |
+| POST   | `/api/agents/run-once`        | Run Gemini one-shot, return final + steps    |
 | POST   | `/api/tasks/fan-out`          | Parallel `Promise.all` demo (proves N-ary)   |
 | GET    | `/api/skills`                 | Skills matrix                                |
 | GET    | `/api/logs`                   | Memory logs                                  |
@@ -191,6 +203,52 @@ Everything lives under `/api`. Key endpoints:
 
 Schemas are validated with Zod on both ingress and egress. The OpenAPI spec
 lives in the parent monorepo at `lib/api-spec/openapi.yaml`.
+
+---
+
+## Known limitations
+
+### Webhook ingest is fire-and-forget (not durable on Cloud Run)
+
+`POST /api/webhooks/:channel` returns `202 Accepted` immediately and processes
+the payload via an in-process `setTimeout` afterwards. On Cloud Run this is
+**not safe** for production webhook delivery: instances can be CPU-throttled
+or terminated as soon as the response is flushed, silently dropping queued
+work.
+
+Options to harden:
+
+1. **Pub/Sub** — replace the `setTimeout` with `topic.publishMessage(payload)`
+   and run a separate Cloud Run service (or a Pub/Sub push subscription back
+   to a `/api/webhooks/_worker` endpoint on this service) to do the actual
+   work. The webhook handler stays sub-100ms and durability moves to GCP.
+2. **Cloud Tasks** — same pattern, useful when you also need scheduled retries
+   and per-task rate limiting.
+3. **Cloud Run with `--cpu-always-allocated`** — the cheapest knob. Keeps the
+   instance fully alive after the response so the in-process worker actually
+   runs. Costs more (CPU billed continuously) and still loses work on
+   instance shutdowns / scale-to-zero.
+
+The monorepo source of truth uses the same fire-and-forget pattern; do this
+hardening upstream first if you want both copies to stay aligned.
+
+---
+
+## Keeping in sync with the monorepo
+
+This repo is a **published snapshot** of the monorepo. The directories below
+are inlined copies of upstream packages:
+
+| Path here              | Upstream package in monorepo            |
+| ---------------------- | --------------------------------------- |
+| `src/` (excl. `lib/`)  | `artifacts/api-server/src/`             |
+| `src/lib/db/`          | `lib/db/src/`                           |
+| `src/schemas/api.ts`   | `lib/api-zod/src/generated/api.ts`      |
+
+To refresh after upstream changes, re-run the split script (or copy the
+files manually) and re-push. The public re-exports are unchanged, so
+`@workspace/db` / `@workspace/api-zod` import paths in the source files
+keep working via `tsconfig.json` `paths` and `build.mjs` `alias`.
 
 ---
 
