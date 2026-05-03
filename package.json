@@ -1,0 +1,43 @@
+{
+  "name": "studio-backend",
+  "version": "1.0.0",
+  "description": "ClawStudio API — Express + Drizzle + Gemini agent orchestration",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --enable-source-maps --import tsx/esm src/index.ts",
+    "build": "node ./build.mjs",
+    "start": "node --enable-source-maps ./dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:push": "drizzle-kit push --config ./drizzle.config.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.51.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-zod": "^0.8.3",
+    "express": "^5.1.0",
+    "pg": "^8.20.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.18.0",
+    "drizzle-kit": "^0.31.9",
+    "esbuild": "^0.25.0",
+    "esbuild-plugin-pino": "^2.3.3",
+    "pino-pretty": "^13.0.0",
+    "thread-stream": "3.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3"
+  }
+}
